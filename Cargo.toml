@@ -75,7 +75,7 @@ metrics = "0.24"
 metrics-exporter-prometheus = "0.16"
 
 [features]
-default = ["nats", "webhook", "oidc"]
+default = ["nats", "webhook", "oidc", "mesh-broker-client"]
 nats = ["dep:async-nats"]
 kafka = ["dep:rdkafka"]
 webhook = ["dep:reqwest"]
@@ -83,6 +83,7 @@ oidc = ["dep:reqwest"]
 postgres = ["dep:sqlx"]
 aws-kms = ["dep:aws-sdk-kms", "dep:aws-config"]
 vault = ["dep:reqwest", "dep:base64"]
+mesh-broker-client = ["dep:reqwest"]
 full = ["nats", "kafka", "webhook", "oidc", "postgres", "aws-kms", "vault"]
 loadtest = ["dep:reqwest", "dep:tempfile"]
 

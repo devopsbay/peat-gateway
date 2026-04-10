@@ -4,6 +4,8 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 use peat_gateway::{api, cdc, cli, config, tenant};
+#[cfg(feature = "mesh-broker-client")]
+use peat_gateway::{api::formations::MeshStateRegistry, mesh_ingest::MeshIngestManager};
 
 #[derive(Parser)]
 #[command(
@@ -83,6 +85,33 @@ async fn serve(config: &config::GatewayConfig) -> Result<()> {
 
     let tenant_mgr = tenant::TenantManager::new(config).await?;
     let cdc_engine = cdc::CdcEngine::new(config, tenant_mgr.clone()).await?;
+
+    #[cfg(feature = "mesh-broker-client")]
+    let mesh_registry = {
+        let registry = MeshStateRegistry::new();
+        if !config.mesh_brokers.is_empty() {
+            let manager = MeshIngestManager::new(
+                registry.clone(),
+                std::time::Duration::from_millis(config.mesh_poll_interval_ms),
+            )
+            .with_cdc(cdc_engine.clone());
+            for mapping in config.mesh_brokers.clone() {
+                manager.register_remote_broker(mapping).await;
+            }
+        }
+        registry
+    };
+
+    #[cfg(feature = "mesh-broker-client")]
+    let app = api::router_with_mesh(
+        tenant_mgr,
+        cdc_engine,
+        config.ui_dir.as_deref(),
+        config.admin_token.clone(),
+        mesh_registry,
+    );
+
+    #[cfg(not(feature = "mesh-broker-client"))]
     let app = api::router(
         tenant_mgr,
         cdc_engine,
