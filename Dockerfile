@@ -21,6 +21,12 @@ COPY . .
 RUN cargo build --release --bin peat-gateway --features full
 
 FROM cgr.dev/chainguard/glibc-dynamic:latest AS chainguard
+# chainguard/glibc-dynamic ships only glibc; copy the shared libs the binary
+# needs at runtime. Glob handles both x86_64 and aarch64 lib paths.
+COPY --from=builder /usr/lib/*/libssl.so.3 /usr/lib/
+COPY --from=builder /usr/lib/*/libcrypto.so.3 /usr/lib/
+COPY --from=builder /usr/lib/*/libz.so.1 /usr/lib/
+COPY --from=builder /usr/lib/*/libzstd.so.1 /usr/lib/
 COPY --from=builder /build/target/release/peat-gateway /usr/local/bin/
 COPY --from=ui-builder /ui/build /app/ui/build
 ENV PEAT_UI_DIR=/app/ui/build

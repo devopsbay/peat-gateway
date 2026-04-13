@@ -87,6 +87,12 @@ mesh-broker-client = ["dep:reqwest"]
 full = ["nats", "kafka", "webhook", "oidc", "postgres", "aws-kms", "vault"]
 loadtest = ["dep:reqwest", "dep:tempfile"]
 
+# Patch n0-snafu to fix color-backtrace 0.7.3 API break:
+# is_dependency_code() was removed from Frame in 0.7.3; our vendored copy
+# replaces the call with is_post_panic_code() + is_runtime_init_code().
+[patch.crates-io]
+n0-snafu = { path = "vendor/n0-snafu" }
+
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util", "macros"] }
 tempfile = "3"
