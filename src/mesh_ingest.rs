@@ -4,10 +4,8 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use peat_mesh::broker::{
-    MeshBrokerState, MeshEvent, MeshNodeInfo, PeerSummary, ReadinessCheck, ReadinessResponse,
-    TopologySummary,
-};
+use peat_mesh::broker::{MeshBrokerState, MeshEvent, MeshNodeInfo, PeerSummary, TopologySummary};
+use peat_mesh::broker::state::{ReadinessCheck, ReadinessResponse};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
@@ -157,10 +155,30 @@ impl RemoteBrokerState {
     }
 
     async fn refresh_once(&self) -> Result<()> {
-        let node_info: MeshNodeInfo = self.get_json("/api/v1/node").await?;
-        let topology: TopologySummary = self.get_json("/api/v1/topology").await?;
-        let readiness = match self.get_json::<ReadinessResponse>("/api/v1/ready").await {
-            Ok(ready) => ready,
+        let node_dto: NodeInfoDto = self.get_json("/api/v1/node").await?;
+        let node_info = MeshNodeInfo {
+            node_id: node_dto.node_id,
+            uptime_secs: node_dto.uptime_secs,
+            version: node_dto.version,
+        };
+
+        let topo_dto: TopologyDto = self.get_json("/api/v1/topology").await?;
+        let topology = TopologySummary {
+            peer_count: topo_dto.peer_count,
+            role: topo_dto.role,
+            hierarchy_level: topo_dto.hierarchy_level,
+        };
+
+        let readiness = match self.get_json::<ReadinessDto>("/api/v1/ready").await {
+            Ok(dto) => ReadinessResponse {
+                ready: dto.ready,
+                node_id: dto.node_id,
+                checks: dto.checks.into_iter().map(|c| ReadinessCheck {
+                    name: c.name,
+                    ready: c.ready,
+                    message: c.message,
+                }).collect(),
+            },
             Err(err) => ReadinessResponse {
                 ready: false,
                 node_id: node_info.node_id.clone(),
@@ -195,12 +213,19 @@ impl RemoteBrokerState {
             }
         }
 
+        let peers: Vec<PeerSummary> = peers_resp.peers.into_iter().map(|p| PeerSummary {
+            id: p.id,
+            connected: p.connected,
+            state: p.state,
+            rtt_ms: p.rtt_ms,
+        }).collect();
+
         let last_sync_ms = now_ms();
         let new_snapshot = Snapshot {
             node_info,
             topology,
             readiness,
-            peers: peers_resp.peers,
+            peers,
             documents,
             last_sync_ms: Some(last_sync_ms),
             last_error: None,
@@ -232,7 +257,9 @@ impl RemoteBrokerState {
             .documents
             .clone();
 
+        tracing::debug!(collections = new_snapshot.documents.len(), "publish_cdc_diffs called");
         for (collection, new_docs) in &new_snapshot.documents {
+            tracing::debug!(collection = %collection, doc_count = new_docs.len(), "checking collection for CDC diffs");
             let old_by_id: HashMap<String, u64> = old_docs
                 .get(collection)
                 .into_iter()
@@ -260,10 +287,11 @@ impl RemoteBrokerState {
                     .unwrap_or("remote-broker")
                     .to_string();
 
+                tracing::info!(collection = %collection, doc_id = %doc_id, "CDC event: document changed, publishing");
                 let event = CdcEvent {
                     org_id: self.mapping.org_id.clone(),
                     app_id: self.mapping.app_id.clone(),
-                    document_id: doc_id.clone(),
+                    document_id: format!("{collection}/{doc_id}"),
                     change_hash,
                     actor_id,
                     timestamp_ms,
@@ -432,9 +460,48 @@ impl MeshBrokerState for RemoteBrokerState {
     }
 }
 
+// Local DTOs for HTTP deserialization — peat_mesh broker types only derive
+// Serialize, not Deserialize, so we deserialize into these then convert.
+
+#[derive(Debug, Deserialize)]
+struct NodeInfoDto {
+    node_id: String,
+    uptime_secs: u64,
+    version: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct TopologyDto {
+    peer_count: usize,
+    role: String,
+    hierarchy_level: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReadinessDto {
+    ready: bool,
+    node_id: String,
+    checks: Vec<ReadinessCheckDto>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReadinessCheckDto {
+    name: String,
+    ready: bool,
+    message: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PeerDto {
+    id: String,
+    connected: bool,
+    state: String,
+    rtt_ms: Option<u64>,
+}
+
 #[derive(Debug, Deserialize)]
 struct PeersEnvelope {
-    peers: Vec<PeerSummary>,
+    peers: Vec<PeerDto>,
 }
 
 #[derive(Debug, Deserialize)]

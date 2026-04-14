@@ -90,14 +90,18 @@ async fn serve(config: &config::GatewayConfig) -> Result<()> {
     let mesh_registry = {
         let registry = MeshStateRegistry::new();
         if !config.mesh_brokers.is_empty() {
+            tracing::info!(count = config.mesh_brokers.len(), "Starting remote mesh broker polling");
             let manager = MeshIngestManager::new(
                 registry.clone(),
                 std::time::Duration::from_millis(config.mesh_poll_interval_ms),
             )
             .with_cdc(cdc_engine.clone());
             for mapping in config.mesh_brokers.clone() {
+                tracing::info!(org_id = %mapping.org_id, app_id = %mapping.app_id, url = %mapping.base_url, "Registering remote broker");
                 manager.register_remote_broker(mapping).await;
             }
+        } else {
+            tracing::info!("No remote mesh brokers configured (PEAT_MESH_BROKERS not set)");
         }
         registry
     };
