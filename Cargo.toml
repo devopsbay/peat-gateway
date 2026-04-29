@@ -92,6 +92,7 @@ loadtest = ["dep:reqwest", "dep:tempfile"]
 # replaces the call with is_post_panic_code() + is_runtime_init_code().
 [patch.crates-io]
 n0-snafu = { path = "vendor/n0-snafu" }
+ed25519-dalek = { path = "vendor/ed25519-dalek" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util", "macros"] }

@@ -10,7 +10,7 @@ FROM rust:1.94 AS builder
 RUN apt-get update && apt-get install -y cmake libcurl4-openssl-dev pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY . .
-RUN cargo build --release --bin peat-gateway --features full
+RUN cargo build --locked --release --bin peat-gateway --features full
 
 FROM registry.access.redhat.com/ubi9/ubi:latest AS ubi-builder
 RUN dnf install -y gcc gcc-c++ cmake make openssl-devel pkg-config curl-devel && dnf clean all
@@ -18,7 +18,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
 ENV PATH="/root/.cargo/bin:${PATH}"
 WORKDIR /build
 COPY . .
-RUN cargo build --release --bin peat-gateway --features full
+RUN cargo build --locked --release --bin peat-gateway --features full
 
 FROM cgr.dev/chainguard/glibc-dynamic:latest AS chainguard
 # chainguard/glibc-dynamic ships only glibc; copy the shared libs the binary
