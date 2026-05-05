@@ -26,6 +26,11 @@ pub struct GatewayConfig {
     pub vault_token: Option<String>,
     /// Vault Transit secret engine key name.
     pub vault_transit_key: Option<String>,
+    /// External peat-mesh broker mappings that should be surfaced as live
+    /// formation state inside the gateway.
+    pub mesh_brokers: Vec<MeshBrokerMapping>,
+    /// Poll interval for remote broker refreshes.
+    pub mesh_poll_interval_ms: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -40,6 +45,14 @@ pub struct CdcConfig {
     pub nats_url: Option<String>,
     /// Kafka broker list (if kafka feature enabled)
     pub kafka_brokers: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct MeshBrokerMapping {
+    pub org_id: String,
+    pub app_id: String,
+    pub base_url: String,
+    pub collections: Vec<String>,
 }
 
 impl GatewayConfig {
@@ -75,6 +88,88 @@ impl GatewayConfig {
             vault_addr: env::var("PEAT_VAULT_ADDR").ok(),
             vault_token: env::var("PEAT_VAULT_TOKEN").ok(),
             vault_transit_key: env::var("PEAT_VAULT_TRANSIT_KEY").ok(),
+            mesh_brokers: parse_mesh_broker_mappings(env::var("PEAT_MESH_BROKERS").ok())?,
+            mesh_poll_interval_ms: env::var("PEAT_MESH_POLL_INTERVAL_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5_000),
         })
+    }
+}
+
+fn parse_mesh_broker_mappings(raw: Option<String>) -> Result<Vec<MeshBrokerMapping>> {
+    let Some(raw) = raw else {
+        return Ok(vec![]);
+    };
+
+    let mut mappings = Vec::new();
+    for entry in raw.split(';').map(str::trim).filter(|s| !s.is_empty()) {
+        let mut parts = entry.split('|').map(str::trim);
+        let org_id = parts.next().filter(|s| !s.is_empty()).ok_or_else(|| {
+            anyhow::anyhow!("missing org_id in PEAT_MESH_BROKERS entry '{entry}'")
+        })?;
+        let app_id = parts.next().filter(|s| !s.is_empty()).ok_or_else(|| {
+            anyhow::anyhow!("missing app_id in PEAT_MESH_BROKERS entry '{entry}'")
+        })?;
+        let base_url = parts.next().filter(|s| !s.is_empty()).ok_or_else(|| {
+            anyhow::anyhow!("missing base_url in PEAT_MESH_BROKERS entry '{entry}'")
+        })?;
+        let collections = parts
+            .next()
+            .map(|segment| {
+                segment
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(default_mesh_collections);
+
+        mappings.push(MeshBrokerMapping {
+            org_id: org_id.to_string(),
+            app_id: app_id.to_string(),
+            base_url: base_url.trim_end_matches('/').to_string(),
+            collections,
+        });
+    }
+
+    Ok(mappings)
+}
+
+fn default_mesh_collections() -> Vec<String> {
+    vec![
+        "cot-broadcast".into(),
+        "contacts".into(),
+        "markers".into(),
+        "missions".into(),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_mesh_broker_mappings() {
+        let mappings = parse_mesh_broker_mappings(Some(
+            "acme|mesh-a|http://127.0.0.1:9001|cot-broadcast,markers;bravo|mesh-b|http://mesh:8081|"
+                .into(),
+        ))
+        .unwrap();
+
+        assert_eq!(mappings.len(), 2);
+        assert_eq!(mappings[0].org_id, "acme");
+        assert_eq!(mappings[0].app_id, "mesh-a");
+        assert_eq!(mappings[0].base_url, "http://127.0.0.1:9001");
+        assert_eq!(mappings[0].collections, vec!["cot-broadcast", "markers"]);
+        assert_eq!(mappings[1].collections, default_mesh_collections());
+    }
+
+    #[test]
+    fn rejects_invalid_mesh_broker_entry() {
+        let err = parse_mesh_broker_mappings(Some("acme|missing".into())).unwrap_err();
+        assert!(err.to_string().contains("base_url"));
     }
 }

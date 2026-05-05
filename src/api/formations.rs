@@ -141,10 +141,29 @@ async fn list_documents(
         None => return Ok(Json(Vec::new())),
     };
 
-    // Query the broker's document store using the app_id as the collection name
-    let docs = match broker.list_documents(&app_id).await {
-        Some(d) => d,
-        None => return Ok(Json(Vec::new())),
+    // First prefer the historical gateway convention of using the app_id as
+    // the collection name. If the broker doesn't expose that collection,
+    // aggregate the default PEAT/tropiOS collections so the endpoint still
+    // surfaces live mesh documents.
+    let docs = if let Some(d) = broker.list_documents(&app_id).await {
+        d
+    } else {
+        let mut aggregated = Vec::new();
+        for collection in ["cot-broadcast", "contacts", "markers", "missions"] {
+            if let Some(mut docs) = broker.list_documents(collection).await {
+                for doc in &mut docs {
+                    if let Some(obj) = doc.as_object_mut() {
+                        obj.entry("_collection".to_string())
+                            .or_insert_with(|| serde_json::Value::String(collection.to_string()));
+                    }
+                }
+                aggregated.extend(docs);
+            }
+        }
+        if aggregated.is_empty() {
+            return Ok(Json(Vec::new()));
+        }
+        aggregated
     };
 
     let summaries: Vec<DocumentSummary> = docs
@@ -152,6 +171,7 @@ async fn list_documents(
         .map(|val| {
             let doc_id = val
                 .get("_id")
+                .or_else(|| val.get("uid"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown")
                 .to_string();

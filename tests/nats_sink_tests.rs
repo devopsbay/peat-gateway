@@ -51,6 +51,8 @@ async fn setup() -> Option<(TenantManager, CdcEngine, tempfile::TempDir)> {
         vault_addr: None,
         vault_token: None,
         vault_transit_key: None,
+        mesh_brokers: vec![],
+        mesh_poll_interval_ms: 5_000,
     };
 
     let tenant_mgr = TenantManager::new(&config).await.unwrap();
