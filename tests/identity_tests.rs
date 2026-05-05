@@ -30,6 +30,8 @@ async fn setup() -> (TenantManager, axum::Router, tempfile::TempDir) {
         vault_addr: None,
         vault_token: None,
         vault_transit_key: None,
+        mesh_brokers: vec![],
+        mesh_poll_interval_ms: 5_000,
     };
     let tenant_mgr = TenantManager::new(&config).await.unwrap();
     let app = peat_gateway::api::app(tenant_mgr.clone());
@@ -740,6 +742,8 @@ async fn setup_encrypted() -> (TenantManager, axum::Router, tempfile::TempDir) {
         vault_addr: None,
         vault_token: None,
         vault_transit_key: None,
+        mesh_brokers: vec![],
+        mesh_poll_interval_ms: 5_000,
     };
     let tenant_mgr = TenantManager::new(&config).await.unwrap();
     let app = peat_gateway::api::app(tenant_mgr.clone());
@@ -805,6 +809,8 @@ async fn encrypted_genesis_stored_bytes_are_not_plaintext() {
         vault_addr: None,
         vault_token: None,
         vault_transit_key: None,
+        mesh_brokers: vec![],
+        mesh_poll_interval_ms: 5_000,
     };
     // Create org + formation (encrypts genesis), then drop to release redb lock
     {
