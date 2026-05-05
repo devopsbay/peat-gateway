@@ -90,7 +90,10 @@ async fn serve(config: &config::GatewayConfig) -> Result<()> {
     let mesh_registry = {
         let registry = MeshStateRegistry::new();
         if !config.mesh_brokers.is_empty() {
-            tracing::info!(count = config.mesh_brokers.len(), "Starting remote mesh broker polling");
+            tracing::info!(
+                count = config.mesh_brokers.len(),
+                "Starting remote mesh broker polling"
+            );
             let manager = MeshIngestManager::new(
                 registry.clone(),
                 std::time::Duration::from_millis(config.mesh_poll_interval_ms),

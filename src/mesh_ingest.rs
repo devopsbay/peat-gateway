@@ -4,8 +4,8 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use peat_mesh::broker::{MeshBrokerState, MeshEvent, MeshNodeInfo, PeerSummary, TopologySummary};
 use peat_mesh::broker::state::{ReadinessCheck, ReadinessResponse};
+use peat_mesh::broker::{MeshBrokerState, MeshEvent, MeshNodeInfo, PeerSummary, TopologySummary};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
@@ -173,11 +173,15 @@ impl RemoteBrokerState {
             Ok(dto) => ReadinessResponse {
                 ready: dto.ready,
                 node_id: dto.node_id,
-                checks: dto.checks.into_iter().map(|c| ReadinessCheck {
-                    name: c.name,
-                    ready: c.ready,
-                    message: c.message,
-                }).collect(),
+                checks: dto
+                    .checks
+                    .into_iter()
+                    .map(|c| ReadinessCheck {
+                        name: c.name,
+                        ready: c.ready,
+                        message: c.message,
+                    })
+                    .collect(),
             },
             Err(err) => ReadinessResponse {
                 ready: false,
@@ -213,12 +217,16 @@ impl RemoteBrokerState {
             }
         }
 
-        let peers: Vec<PeerSummary> = peers_resp.peers.into_iter().map(|p| PeerSummary {
-            id: p.id,
-            connected: p.connected,
-            state: p.state,
-            rtt_ms: p.rtt_ms,
-        }).collect();
+        let peers: Vec<PeerSummary> = peers_resp
+            .peers
+            .into_iter()
+            .map(|p| PeerSummary {
+                id: p.id,
+                connected: p.connected,
+                state: p.state,
+                rtt_ms: p.rtt_ms,
+            })
+            .collect();
 
         let last_sync_ms = now_ms();
         let new_snapshot = Snapshot {
@@ -233,7 +241,8 @@ impl RemoteBrokerState {
 
         // Publish CDC events BEFORE swapping snapshot so old state is still readable
         if let Some(ref engine) = self.cdc_engine {
-            self.publish_cdc_diffs(engine, &new_snapshot, last_sync_ms).await;
+            self.publish_cdc_diffs(engine, &new_snapshot, last_sync_ms)
+                .await;
         }
 
         self.emit_diffs(&new_snapshot);
@@ -257,7 +266,10 @@ impl RemoteBrokerState {
             .documents
             .clone();
 
-        tracing::debug!(collections = new_snapshot.documents.len(), "publish_cdc_diffs called");
+        tracing::debug!(
+            collections = new_snapshot.documents.len(),
+            "publish_cdc_diffs called"
+        );
         for (collection, new_docs) in &new_snapshot.documents {
             tracing::debug!(collection = %collection, doc_count = new_docs.len(), "checking collection for CDC diffs");
             let old_by_id: HashMap<String, u64> = old_docs
